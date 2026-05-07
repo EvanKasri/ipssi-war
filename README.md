@@ -11,7 +11,7 @@
 [![Status](https://img.shields.io/badge/Status-Released-success)]()
 
 <p>
-  <img src="Images/tanks.jpg" width="640" alt="Menu IPSSI-WAR">
+  <img src="Images/ipssi-war.jfif" width="640" alt="IPSSI-WAR">
 </p>
 
 </div>

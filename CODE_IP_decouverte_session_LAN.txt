@@ -1,0 +1,231 @@
+================================================================================
+  PROJET : IPSSI-WAR / 3D Tanks — IP, découverte LAN automatique, choix d'IP
+================================================================================
+
+SOURCES :
+  • Assets\Scripts\Network\LanLobbyDiscovery.cs   → UDP 47777, beacon, IP préférée pour annoncer la session
+  • Assets\Scripts\Network\NetworkMenuManager.cs → menu, scan auto, affichage des IPs locales
+
+RÉSUMÉ :
+  • La « bonne » IP pour l’annonce LAN n’est PAS la première carte : GetPreferredLanIPv4()
+    privilégie une interface IPv4 avec PASSERELLE (gateway) = route vers Internet/LAN utile.
+    Sinon ignore les adaptateurs virtuels (Hyper-V, VMware, VPN…) sans gateway.
+    Sinon prend une IP « fallback » ou 127.0.0.1.
+  • GetLocalIPs() dans NetworkMenuManager affiche à l’hôte les IPs des interfaces avec
+    passerelle en priorité, puis celles sans gateway (toujours avec filtre virtuel similaire).
+  • La recherche auto de parties : UdpClient, SendDiscoveryRequest toutes les 4s côté client,
+    réponses unicast depuis l’hôte qui envoie l’IP choisie dans le payload.
+
+================================================================================
+[FICHIER] LanLobbyDiscovery.cs — extrait recherche automatique + choix IP
+================================================================================
+
+    private void Update()
+    {
+        while (m_Pending.TryDequeue(out LanServerEntry e))
+            m_OnDiscovered?.Invoke(e);
+
+        if (m_HostBeacon && Time.realtimeSinceStartup - m_LastBeaconTime >= 1f)
+        {
+            m_LastBeaconTime = Time.realtimeSinceStartup;
+            SendBeaconBroadcast();
+        }
+
+        if (!m_HostBeacon && m_ListenActive && m_OnDiscovered != null && m_Udp != null &&
+            Time.realtimeSinceStartup >= m_NextAutoDiscoveryPing)
+        {
+            m_NextAutoDiscoveryPing = Time.realtimeSinceStartup + 4f;
+            SendDiscoveryRequest(7777);
+        }
+    }
+
+    /// <summary>Demande aux hôtes du LAN de répondre en direct (unicast). À appeler au clic Actualiser.</summary>
+    public void SendDiscoveryRequest(int gamePort = 7777)
+    {
+        if (!m_ListenActive || m_Udp == null || m_HostBeacon) return;
+        string payload = $"{Magic}|REQ|{gamePort}";
+        byte[] bytes = Encoding.UTF8.GetBytes(payload);
+        try
+        {
+            m_Udp.Send(bytes, bytes.Length, new IPEndPoint(IPAddress.Broadcast, m_DiscoveryPort));
+            foreach (IPAddress ua in GetOtherBroadcastAddresses())
+            {
+                try { m_Udp.Send(bytes, bytes.Length, new IPEndPoint(ua, m_DiscoveryPort)); }
+                catch { /* ignore */ }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning("[LanLobbyDiscovery] REQ LAN : " + ex.Message);
+        }
+    }
+
+    void SendBeaconUnicast(IPEndPoint target)
+    {
+        if (m_Udp == null) return;
+        string ip = GetPreferredLanIPv4();
+        string host = Environment.MachineName ?? "host";
+        string payload = $"{Magic}|1|{m_GamePort}|{ip}|{host}";
+        ...
+    }
+
+    void SendBeaconBroadcast()
+    {
+        if (m_Udp == null) return;
+        string ip = GetPreferredLanIPv4();
+        ...
+    }
+
+    static string GetPreferredLanIPv4()
+    {
+        // Règle : interface avec passerelle IPv4 = vraiment connectée, même si c'est un vEthernet.
+        // (ex: Hyper-V external switch bridge une carte physique → a une vraie gateway)
+        // Les interfaces SANS gateway et avec un nom virtuel sont ignorées.
+        string fallback = null;
+        try
+        {
+            foreach (NetworkInterface ni in NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (ni.OperationalStatus != OperationalStatus.Up) continue;
+                if (ni.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
+                if (ni.NetworkInterfaceType == NetworkInterfaceType.Tunnel) continue;
+
+                var props = ni.GetIPProperties();
+
+                // Vérifier présence d'une passerelle IPv4
+                bool hasIPv4Gateway = false;
+                if (props.GatewayAddresses != null)
+                    foreach (var gw in props.GatewayAddresses)
+                        if (gw.Address.AddressFamily == AddressFamily.InterNetwork)
+                        { hasIPv4Gateway = true; break; }
+
+                // Filtrer les adaptateurs SANS gateway qui sont clairement virtuels
+                if (!hasIPv4Gateway)
+                {
+                    string desc = ni.Description.ToLowerInvariant();
+                    string name = ni.Name.ToLowerInvariant();
+                    if (desc.Contains("virtual") || desc.Contains("hyper-v") ||
+                        desc.Contains("vmware")  || desc.Contains("vpn")     ||
+                        desc.Contains("tap ")    || name.Contains("vethernet")) continue;
+                }
+
+                foreach (UnicastIPAddressInformation u in props.UnicastAddresses)
+                {
+                    if (u.Address.AddressFamily != AddressFamily.InterNetwork) continue;
+                    string a = u.Address.ToString();
+                    if (a.StartsWith("169.254.") || a == "127.0.0.1") continue;
+
+                    if (hasIPv4Gateway) return a;  // ← meilleur choix : interface active
+                    fallback ??= a;
+                }
+            }
+        }
+        catch { /* ignore */ }
+        return fallback ?? "127.0.0.1";
+    }
+
+    static System.Collections.Generic.List<IPAddress> GetOtherBroadcastAddresses()
+    {
+        // Broadcast dirigé par sous-réseau (toutes interfaces up) pour dépasser parfois
+        // les limites du seul Broadcast global.
+        ...
+    }
+
+================================================================================
+[FICHIER] NetworkMenuManager.cs — scan auto au menu + affichage IPs « correctes »
+================================================================================
+
+    private void Start()
+    {
+        UpdateBottomBar();
+        // Démarrer le scan LAN auto dès l'ouverture du menu
+        StartAutoScan();
+    }
+
+    private void Update()
+    {
+        ...
+        if (_state != State.Menu) return;
+
+        // Auto-refresh toutes les 4 secondes
+        if (Time.realtimeSinceStartup >= _nextAutoScan)
+        {
+            _nextAutoScan = Time.realtimeSinceStartup + 4f;
+            DoScan();
+        }
+        ...
+    }
+
+    private void StartAutoScan()
+    {
+        if (_disco == null) return;
+        _disco.StartClientListen(OnServerFound);
+        _nextAutoScan = Time.realtimeSinceStartup; // scan immédiat
+    }
+
+    private void DoScan()
+    {
+        if (_disco == null) return;
+        if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening) return;
+        _disco.SendDiscoveryRequest(7777);
+        ...
+    }
+
+    private void OnServerFound(LanLobbyDiscovery.LanServerEntry e)
+    {
+        // Réception d’une entrée découverte (IP du payload envoyé par l’hôte = GetPreferredLanIPv4)
+        ...
+    }
+
+    private static string GetLocalIPs()
+    {
+        // N'affiche que les IPs des interfaces réelles (avec passerelle).
+        // Fallback sur toutes les IPs si aucune interface avec gateway.
+        var withGw = new StringBuilder();
+        var noGw   = new StringBuilder();
+        try
+        {
+            foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (ni.OperationalStatus != OperationalStatus.Up) continue;
+                if (ni.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
+                if (ni.NetworkInterfaceType == NetworkInterfaceType.Tunnel) continue;
+
+                var props = ni.GetIPProperties();
+                bool hasIPv4Gw = false;
+                if (props.GatewayAddresses != null)
+                    foreach (var gw in props.GatewayAddresses)
+                        if (gw.Address.AddressFamily == AddressFamily.InterNetwork)
+                        { hasIPv4Gw = true; break; }
+
+                // Filtrer virtuels seulement s'ils n'ont PAS de passerelle
+                if (!hasIPv4Gw)
+                {
+                    string desc = ni.Description.ToLowerInvariant();
+                    string name = ni.Name.ToLowerInvariant();
+                    if (desc.Contains("virtual") || desc.Contains("hyper-v") ||
+                        desc.Contains("vmware")  || desc.Contains("vpn")     ||
+                        desc.Contains("tap ")    || name.Contains("vethernet")) continue;
+                }
+
+                foreach (var u in props.UnicastAddresses)
+                {
+                    if (u.Address.AddressFamily != AddressFamily.InterNetwork) continue;
+                    string a = u.Address.ToString();
+                    if (a.StartsWith("169.254.")) continue;
+                    var target = hasIPv4Gw ? withGw : noGw;
+                    if (target.Length > 0) target.Append("  /  ");
+                    target.Append(a);
+                }
+            }
+        }
+        catch { }
+        if (withGw.Length > 0) return withGw.ToString();
+        return noGw.Length > 0 ? noGw.ToString() : "(n/a)";
+    }
+
+================================================================================
+FIN DU FICHIER
+================================================================================
+
+Pour le code COMPLET ligne par ligne, ouvrir directement les deux .cs cités en haut.

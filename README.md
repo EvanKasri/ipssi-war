@@ -24,15 +24,9 @@
 
 > Projet réalisé dans le cadre d'un module à l'IPSSI. L'usage de l'IA était autorisé pour la production du code et des assets ; notre travail a porté sur la **conception**, la **direction artistique**, le **game design**, l'**intégration** et la **livraison** du jeu.
 
-<p align="center">
-  <a href="https://streamable.com/ynbe2e">
-    <img src="https://img.shields.io/badge/▶%20Voir%20la%20vidéo%20de%20présentation-FF4F00?style=for-the-badge" alt="Voir la vidéo">
-  </a>
-  &nbsp;
-  <a href="https://github.com/EvanKasri/ipssi-war/releases/download/v1.0.0/showcase-ipssiwar.mp4">
-    <img src="https://img.shields.io/badge/⬇%20Télécharger%20HD-1f6feb?style=for-the-badge" alt="Télécharger HD">
-  </a>
-</p>
+### Vidéo de présentation
+
+https://github.com/user-attachments/assets/386e11db-937a-4679-9f58-f1d12490f5e9
 
 ---
 

@@ -24,13 +24,15 @@
 
 > Projet réalisé dans le cadre d'un module à l'IPSSI. L'usage de l'IA était autorisé pour la production du code et des assets ; notre travail a porté sur la **conception**, la **direction artistique**, le **game design**, l'**intégration** et la **livraison** du jeu.
 
+### Vidéo de présentation
+
+https://github.com/user-attachments/assets/4ff62774-57f2-4371-854d-23d43e3923ab
+
 <p align="center">
   <a href="https://streamable.com/ynbe2e">
-    <img src="https://img.shields.io/badge/▶%20Voir%20la%20vidéo%20de%20présentation-FF4F00?style=for-the-badge" alt="Voir la vidéo">
+    <img src="https://img.shields.io/badge/Miroir%20Streamable-FF4F00?style=for-the-badge&logo=streamable&logoColor=white" alt="Miroir Streamable">
   </a>
 </p>
-
-> Lien direct : <https://streamable.com/ynbe2e>
 
 ---
 
